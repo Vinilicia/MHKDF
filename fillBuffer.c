@@ -81,40 +81,89 @@ unsigned int blake2bPermutation(unsigned long input_data) {
     return result;
 }
 
-unsigned int** allocateMatrix(int k, int n) {
-    unsigned int** B = (unsigned int**)malloc(k * sizeof(unsigned int*));
+unsigned long** allocateMatrix(int k, int n) {
+    unsigned long** B = (unsigned long**)malloc(k * sizeof(unsigned long*));
     for (int i = 0; i < k; i++) {
-        B[i] = (unsigned int*)malloc(n * sizeof(unsigned int));
+        B[i] = (unsigned long*)malloc(n * sizeof(unsigned long));
     }
     return B;
 }
 
-void freeMatrix(unsigned int** B, int k) {
+void freeMatrix(unsigned long** B, int k) {
     for (int i = 0; i < k; i++) {
         free(B[i]);
     }
     free(B);
 }
 
-void printMatrix(unsigned int** B, int k, int n) {
+void printMatrix(unsigned long** B, int k, int n) {
     printf("B:\n");
     for (int i = 0; i < k; i++) {
         for (int j = 0; j < n; j++) {
-            printf("%x ", B[i][j]);
+            printf("%lx ", B[i][j]);
         }
         printf("\n");
     }
 }
 
-void fillBuffer(unsigned int** B, int k, int n, unsigned char *password) {
-    unsigned char hash[EVP_MAX_MD_SIZE];
+void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
+    unsigned char hash[32];
+    unsigned char aux_hash[32];
     unsigned char* hexString = (char*) malloc(17 * sizeof(char));
     char concatenatedString[8 + strlen(password)];
     unsigned long concatenatedInt;
 
-    //  B[0][0] ← H(P || S)
+    //  B[0][0] ... B[0][15] ←  H(P || S)
     hashFunction(password, hash);
-    B[0][0] = firstNumbers(hash);
+    for (int i = 0; i < 4; i++) {
+        unsigned long part = 0;
+        for (int j = 8*i; j < 8*i + 8; j++) {
+	    if(hash[j] <= 0xf){
+		part = (part << 4) | hash[j];
+	    	continue;
+	    }
+            part = (part << 8) | hash[j];
+        }
+        B[0][i] = part;
+    }	
+    hashFunction(hash, aux_hash);
+    for (int i = 0; i < 4; i++){
+        unsigned long part = 0;
+        for (int j = 8*i; j < 8*i + 8; j++) {
+	    if(aux_hash[j] <= 0xf){
+		part = (part << 4) | aux_hash[j];
+	    	continue;
+	    }
+            part = (part << 8) | aux_hash[j];
+        }
+        B[0][i+4] = part;
+    }	
+    hashFunction(aux_hash, hash);
+    for (int i = 0; i < 4; i++){
+        unsigned long part = 0;
+        for (int j = 8*i; j < 8*i + 8; j++) {
+	    if(hash[j] <= 0xf){
+		part = (part << 4) | hash[j];
+	    	continue;
+	    }
+            part = (part << 8) | hash[j];
+        }
+        B[0][i+8] = part;
+    }	
+    hashFunction(hash, aux_hash);
+    for (int i = 0; i < 4; i++){
+        unsigned long part = 0;
+        for (int j = 8*i; j < 8*i + 8; j++) {
+	    if(aux_hash[j] <= 0xf){
+		part = (part << 4) | aux_hash[j];
+	    	continue;
+	    }
+            part = (part << 8) | aux_hash[j];
+        }
+        B[0][i+12] = part;
+    }	
+
+    /*B[0][0] = firstNumbers(hash);
 
     //  B[0][1] ← H(P || S || B[0][0])
     unsigned char* hString = (char*) malloc(9 * sizeof(char));
@@ -186,7 +235,7 @@ void fillBuffer(unsigned int** B, int k, int n, unsigned char *password) {
     B[0][n-1] ^= (concatenatedInt >> 32);
 
     free(hexString);
-    free(hString);
+    free(hString);*/
 }
 
 int main() {
@@ -194,9 +243,9 @@ int main() {
     double cpu_time_used;
 
     start = clock();
-    int k = 16157, n = 16157;
+    int k = 16, n = 16;
 
-    unsigned int** B = allocateMatrix(k, n);
+    unsigned long** B = allocateMatrix(k, n);
 
     unsigned char *password = "senha_muito_forte";
     fillBuffer(B, k, n, password);
