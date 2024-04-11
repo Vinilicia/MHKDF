@@ -98,9 +98,6 @@ void printMatrix(unsigned long** B, int k, int n) {
 void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
     unsigned char hash[32];
     unsigned char aux_hash[32];
-    unsigned char* hexString = (char*) malloc(17 * sizeof(char));
-    char concatenatedString[8 + strlen(password)];
-    unsigned long concatenatedInt;
 
     //  B[0][0] ... B[0][15] ←  H(P || S)
     hashFunction(password, hash);
@@ -158,64 +155,55 @@ void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
     // Primeira linha
     for(int j = 0; j < n/16 - 1; j++){
 	unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
+	int cont = 0;
 	for(int h = 16*j; h < 16*j+16; h++){
-	    v[h] = B[0][h];
+	    v[cont] = B[0][h];
+	    cont++;
 	}
         blake2bPermutation(v);
+	cont = 0;
 	for(int h = 16*j; h < 16*j+16; h++){
-	    B[0][h+16] = v[h];
+	    B[0][h+16] = v[cont];
+	    cont++;
 	}
+	free(v);
     }
     
 
     for(int i = 1; i < k; i++){
-	// B[i][0...15] <-- H(B[i-1][k-16...k-1]
+	// B[i][0...15] <-- H(B[i-1][n-16...n-1]
 	unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
-	for(int h = k-16; h < k; h++){
-	    v[h] = B[i-1][h];
+	int cont = 0;
+	for(int h = n-16; h < n; h++){
+	    v[cont] = B[i-1][h];
+	    cont++;
 	}
         blake2bPermutation(v);
 	for(int h = 0; h < 16; h++){
-            B[i][h] = v[h];
+	    B[i][h] = v[h];
 	}
         free(v);
 
-	// B[i][0...15] <-- H(B[i-1][k-15...k-1]
-	for(int j = 1; j < n/16; j++){
+	// B[i][h...h+15] <-- H(B[i][h+16...h+31]
+	for(int j = 0; j < n/16 - 1; j++){
 	    unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
-	    for(int h = 16*j; h < 16*j+16; h++){
-	    	v[h] = B[i][h];
+	    cont = 0;
+	    int h;
+	    for(h = 16*j; h < 16*j+16; h++){
+	    	v[cont] = B[i][h];
+		cont++;
 	    }
             blake2bPermutation(v);
-	    for(int h = 16*j; h < 16*j+16; h++){
-	    	B[i][h+16] = v[h];
+	    cont = 0;
+	    int temp = h + 16;
+	    for(; h < temp; h++){
+	    	B[i][h] = v[cont];
+		cont++;
 	    }
 	    free(v);
 	}
-    }
+   }
 
-
-	
-    
-    /*// B[0][0] ← B[0][0] ⊕  H(B[k-1][0] || B[k-1][1]
-    concatenatedInt = intConcatenate(B[k-1][0], B[k-1][1]);
-    concatenatedInt = blake2bPermutation(concatenatedInt);
-    B[0][0] ^= (concatenatedInt >> 32);
-
-    // B[0][j] ← B[0][j] ⊕  H(B[k-1][j+1] || B[0][j−1]
-    for (int j = 1; j < n - 1; j++) {
-    	concatenatedInt = intConcatenate(B[k-1][j+1], B[0][j-1]);
-    	concatenatedInt = blake2bPermutation(concatenatedInt);
-        B[0][j] ^= (concatenatedInt >> 32);
-    }
-
-    // B[0][n−1] ← B[0][n−1] ⊕  H(B[k-1][n−1] || B[0][n−2]
-    concatenatedInt = intConcatenate(B[k-1][n-1], B[0][n-2]);
-    concatenatedInt = blake2bPermutation(concatenatedInt);
-    B[0][n-1] ^= (concatenatedInt >> 32);*/
-
-    free(hexString);
-//    free(hString);
 }
 
 int main() {
@@ -223,13 +211,13 @@ int main() {
     double cpu_time_used;
 
     start = clock();
-    int k = 4, n = 16;
+    int k = 4, n = 48;
 
     unsigned long** B = allocateMatrix(k, n);
 
     unsigned char *password = "senha_muito_forte";
     fillBuffer(B, k, n, password);
-    printMatrix(B, k, n);
+    //printMatrix(B, k, n);
 
     freeMatrix(B, k);
     
