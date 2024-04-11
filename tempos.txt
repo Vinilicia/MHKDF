@@ -1,0 +1,22 @@
+fillBuffer 4:
+  1 Mega -> 0.005s
+  10 Megas -> 0.04s
+  100 Megas -> 0.39s
+  1 Giga -> 4.2s
+  
+fillBuffer 3:
+  1 Mega -> 0.08s
+  10 Megas -> 0.8s
+  100 Megas -> 8s
+  1 Giga -> 80.6s
+  
+fillBuffer 2:
+  1 Mega -> 0.32s
+  10 Megas -> 3s
+  100 Megas -> 32s
+  1 Giga -> 340s = 5 min e 40s
+
+fillBuffer 1:
+  1 Mega -> 8.36s
+  10 Megas -> 84.02s
+  100 Megas -> 833s ≃ 13.9 min
