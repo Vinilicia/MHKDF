@@ -1,3 +1,9 @@
+fillBuffer 5:
+  1 Mega -> 0.028s
+  10 Megas -> 0.27s
+  100 Megas -> 3.9s
+  1 Giga -> 47s
+
 fillBuffer 4:
   1 Mega -> 0.005s
   10 Megas -> 0.04s

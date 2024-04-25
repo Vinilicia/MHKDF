@@ -1,3 +1,3 @@
 all:
-	gcc -o prog fillBuffer.c -lssl -lcrypto
+	gcc -o prog mhkdf.c -lssl -lcrypto
 	./prog
