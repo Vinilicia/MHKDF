@@ -6,9 +6,6 @@
 #include <openssl/evp.h>
 #include <string.h>
 
-#define N 1024
-#define M 0x100000000
-
 void hashFunction(unsigned char *input, unsigned char *hash) {
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
     const EVP_MD *md = EVP_sha256();
@@ -32,6 +29,17 @@ void G(unsigned long *a, unsigned long *b, unsigned long *c, unsigned long *d) {
     *c = (*c + *d + 2 * (*c) * (*d)) & 0xffffffffffffffff;
     *b ^= *c;
     *b = (*b >> 63 | *b << 1) & 0xffffffffffffffff;
+}
+
+void blake2bPermutation(unsigned long *v) {
+    G(&v[0], &v[4], &v[8], &v[12]);
+    G(&v[1], &v[5], &v[9], &v[13]);
+    G(&v[2], &v[6], &v[10], &v[14]);
+    G(&v[3], &v[7], &v[11], &v[15]);
+    G(&v[0], &v[5], &v[10], &v[15]);
+    G(&v[1], &v[6], &v[11], &v[12]);
+    G(&v[2], &v[7], &v[8], &v[13]);
+    G(&v[3], &v[4], &v[9], &v[14]);
 }
 
 unsigned long** allocateMatrix(int k, int n) {
@@ -59,23 +67,15 @@ void printMatrix(unsigned long** B, int k, int n) {
     }
 }
 
-void fillBuffer(unsigned long** B, unsigned char *password) {
-   int i,j,k,c,r,l,t;
-   long int W[4] = {0x9a82019df03c376b,
-		    0xa45b3e306748fd31,
-		    0xd0f4938b00c921ae,
-		    0x74f201adf3564fc3};
-		    
+void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
     unsigned char hash[32];
-
-   // Filling the first row:
-
-   // B[0][0],B[0][1],B[0][2],B[0][3] := Hash(P||S)
-   
+    unsigned char aux_hash[32];
+	int c, l;
+    //  B[0][0] ... B[0][15] ←  H(P || S)
     hashFunction(password, hash);
-    for (i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++) {
         unsigned long part = 0;
-        for (j = 8*i; j < 8*i + 8; j++) {
+        for (int j = 8*i; j < 8*i + 8; j++) {
 	    if(hash[j] <= 0xf){
 		part = (part << 4) | hash[j];
 	    	continue;
@@ -83,40 +83,99 @@ void fillBuffer(unsigned long** B, unsigned char *password) {
             part = (part << 8) | hash[j];
         }
         B[0][i] = part;
+    }	
+    hashFunction(hash, aux_hash);
+    for (int i = 0; i < 4; i++){
+        unsigned long part = 0;
+        for (int j = 8*i; j < 8*i + 8; j++) {
+	    if(aux_hash[j] <= 0xf){
+		part = (part << 4) | aux_hash[j];
+	    	continue;
+	    }
+            part = (part << 8) | aux_hash[j];
+        }
+        B[0][i+4] = part;
+    }	
+    hashFunction(aux_hash, hash);
+    for (int i = 0; i < 4; i++){
+        unsigned long part = 0;
+        for (int j = 8*i; j < 8*i + 8; j++) {
+	    if(hash[j] <= 0xf){
+		part = (part << 4) | hash[j];
+	    	continue;
+	    }
+            part = (part << 8) | hash[j];
+        }
+        B[0][i+8] = part;
+    }	
+    hashFunction(hash, aux_hash);
+    for (int i = 0; i < 4; i++){
+        unsigned long part = 0;
+        for (int j = 8*i; j < 8*i + 8; j++) {
+	    if(aux_hash[j] <= 0xf){
+		part = (part << 4) | aux_hash[j];
+	    	continue;
+	    }
+            part = (part << 8) | aux_hash[j];
+        }
+        B[0][i+12] = part;
+    }	
+	unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
+
+    // Preencher restante da matriz
+    
+
+    // Primeira linha
+    for(int j = 0; j < n/16 - 1; j++){
+	int cont = 0;
+	for(int h = 16*j; h < 16*j+16; h++){
+	    v[cont] = B[0][h];
+	    cont++;
+	}
+        blake2bPermutation(v);
+	cont = 0;
+	for(int h = 16*j; h < 16*j+16; h++){
+	    B[0][h+16] = v[cont];
+	    cont++;
+	}
     }
     
-    for(j = 1; j < N/4; j++){
-      c = B[0][4*j-1] % j;
-	
-      for(k = 0; k < 4; k++)
-         B[0][4*j+k] = (B[0][4*c+k] + W[k]) % M;
 
-      	G(&B[0][4*j],&B[0][4*j+1],&B[0][4*j+2],&B[0][4*j+3]);
-     }
+    for(int i = 1; i < k; i++){
+	// B[i][0...15] <-- H(B[i-1][n-16...n-1]
+	int cont = 0;
+	 l = B[i-1][n-1] % i;
+	 c = B[i-1][n-1] % n;
+	for(int h = c; h < c+16; h++){
+	    v[cont] = B[l][h%n];
+	    cont++;
+	}
+        blake2bPermutation(v);
+	for(int h = 0; h < 16; h++){
+	    B[i][h] = v[h];
+	}
+        
+	// B[i][h...h+15] <-- H(B[i][h+16...h+31]
+	for(int j = 1; j < n/16 - 1; j++){
+	    cont = 0;
+	    	l = B[i][16*j-1] % i;
+	 	c = B[i][16*j-1] % n;
+	    int h;
+	    for(h = c; h < c+16; h++){
+	    	v[cont] = B[l][h%n];
+		cont++;
+	    }
+            blake2bPermutation(v);
+	    cont = 0;
+	    int temp = h + 16;
+	    for(; h < temp; h++){
+	    	B[i][h] = v[cont];
+		cont++;
+	    }
+	}
+   }
+   free(v);
 
-   // Filling the remaining rows:
-
-   for(i = 1; i < N; i++){
-      for(j = 0; j < N; j++){
-         l = B[i-1][(4*j) % N] % i;  // Chooses a random row
-
-	 for(k = 0; k < 4; k++)
-            B[i][(4*j+k) % N] = (B[l][(4*j+k) % N] + W[k]) % M;
-
-	 G(&B[i][(4*j) % N],&B[i][(4*j+1) % N],&B[i][(4*j+2) % N],&B[i][(4*j+3) % N]);
-	 G(&W[0],&W[1],&W[2],&W[3]);
-
-	 // t is an integer such that if j < N/2, then t = 1 and t = 0 otherwise
-	 t = (2*j/N + 1) % 2;
-
-	 // c is a random column index such that c > N/2 if j < N/2 and c < N/2 if j > N/2
-         c = (B[i][(4*j+1) % N] + B[i][(4*j+3) % N]) % (N/2) + (N/2) * t;
-
-         r = (B[i][(4*j) % N] + B[i][(4*j+2) % N]) % i;
-
-         G(&B[r][(4*c) % N],&B[r][(4*c+1) % N],&B[r][(4*c+2) % N],&B[r][(4*c+3) % N]);
-        }
-    }
 }
 
 int main() {
@@ -124,14 +183,15 @@ int main() {
     double cpu_time_used;
 
     start = clock();
+    int k = 1024, n = 1024;
 
-    unsigned long** B = allocateMatrix(N, N);
+    unsigned long** B = allocateMatrix(k, n);
 
     unsigned char *password = "senha_muito_forte";
-    fillBuffer(B, password);
-    //printMatrix(B, N, N);
-
-    freeMatrix(B, N);
+    fillBuffer(B, k, n, password);
+    //printMatrix(B, k, n);
+    
+    freeMatrix(B, k);
     
     end = clock();
     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
