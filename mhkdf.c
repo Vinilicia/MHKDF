@@ -6,6 +6,11 @@
 #include <openssl/evp.h>
 #include <string.h>
 
+int mod(int a, int b) {
+    int result = a % b;
+    return (result < 0) ? result + b : result;
+}
+
 void hashFunction(unsigned char *input, unsigned char *hash) {
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
     const EVP_MD *md = EVP_sha256();
@@ -126,56 +131,95 @@ void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
     
 
     // Primeira linha
+    int cont;
     for(int j = 0; j < n/16 - 1; j++){
-	int cont = 0;
-	for(int h = 16*j; h < 16*j+16; h++){
-	    v[cont] = B[0][h];
-	    cont++;
-	}
-        blake2bPermutation(v);
-	cont = 0;
-	for(int h = 16*j; h < 16*j+16; h++){
-	    B[0][h+16] = v[cont];
-	    cont++;
-	}
+    	cont = 0;
+        for(int h = 16*j; h < 16*j+16; h++){
+            v[cont] = B[0][h];
+            cont++;
+        }
+            blake2bPermutation(v);
+        cont = 0;
+        for(int h = 16*j; h < 16*j+16; h++){
+            B[0][h+16] = v[cont];
+            cont++;
+        }
     }
     
-
     for(int i = 1; i < k; i++){
-	// B[i][0...15] <-- H(B[i-1][n-16...n-1]
-	int cont = 0;
-	 l = B[i-1][n-1] % i;
-	 c = B[i-1][n-1] % n;
-	for(int h = c; h < c+16; h++){
-	    v[cont] = B[l][h%n];
-	    cont++;
-	}
-        blake2bPermutation(v);
-	for(int h = 0; h < 16; h++){
-	    B[i][h] = v[h];
-	}
-        
-	// B[i][h...h+15] <-- H(B[i][h+16...h+31]
-	for(int j = 1; j < n/16 - 1; j++){
-	    cont = 0;
-	    	l = B[i][16*j-1] % i;
-	 	c = B[i][16*j-1] % n;
-	    int h;
-	    for(h = c; h < c+16; h++){
-	    	v[cont] = B[l][h%n];
-		cont++;
-	    }
+        // B[i][0...15] <-- H(B[i-1][n-16...n-1]
+        cont = 0;
+        l = B[i-1][n-1] % i;
+        c = B[i-1][n-1] % n;
+        for(int h = c; h < c+16; h++){
+            v[cont] = B[l][h%n];
+            cont++;
+        }
             blake2bPermutation(v);
-	    cont = 0;
-	    int temp = h + 16;
-	    for(; h < temp; h++){
-	    	B[i][h] = v[cont];
-		cont++;
-	    }
-	}
+        for(int h = 0; h < 16; h++){
+            B[i][h] = v[h];
+        }
+            
+        // B[i][h...h+15] <-- H(B[i][h+16...h+31]
+        for(int j = 1; j < n/16; j++){
+            cont = 0;
+            l = B[i][16*j-1] % i;
+            c = B[i][16*j-1] % n;
+            for(int h = c; h < c+16; h++){
+                v[cont] = B[l][h%n];
+                cont++;
+            }
+            blake2bPermutation(v);
+            cont = 0;
+            for(int h = j*16; h < j*16+16; h++){
+                B[i][h%n] = v[cont];
+                cont++;
+            }
+        }
    }
    free(v);
 
+}
+
+void updateState(unsigned long** B, int k, int n){
+    int l1, l2, c1, c2;
+    l1 = B[k-1][n-1] % k;
+	c1 = B[k-1][n-1] % n;
+    int gap = n/4;
+    int d1, d2;
+    unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
+    for(int i = 0; i < k*n/16; i++){
+        l2 = B[l1][c1] % k;
+        c2 = (c1 < n/2) ? c1 + gap + B[l1][c1] % gap : c1 - gap - B[l1][c1] % gap;
+        switch(B[l1][c1]%4){
+            case 0:
+                d1 = -1; d2 = -1;
+                break;
+            case 1:
+                d1 = -1; d2 = 1;
+                break;
+            case 2:
+                d1 = 1; d2 = 1;
+                break;
+            case 3:
+                d1 = 1; d2 = -1;
+                break;
+        }
+        for(int h = 0; h < 16; h++){
+	    	v[h] = B[mod(l1+h*d1,k)][mod(c1+h*d2,n)];
+            //printf("B[%d][%d],", mod(l1+h*d1,k), mod(c1+h*d2,n));
+	    }
+        //printf(" -->\n");
+        blake2bPermutation(v);
+	    for(int h = 0; h < 16; h++){
+	    	B[mod(l2+h*d1,k)][mod(c2+h*d2,n)] = v[h];
+            //printf("B[%d][%d],", mod(l2+h*d1,k), mod(c2+h*d2,n));
+	    }
+        //printf("\n\n");
+        l1 = B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % k;
+	    c1 = B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % n;
+    }
+    free(v);
 }
 
 int main() {
@@ -183,12 +227,14 @@ int main() {
     double cpu_time_used;
 
     start = clock();
-    int k = 1024, n = 1024;
+    int k = 160, n = 160;
+    // 11584
 
     unsigned long** B = allocateMatrix(k, n);
 
     unsigned char *password = "senha_muito_forte";
     fillBuffer(B, k, n, password);
+    updateState(B, k, n);
     //printMatrix(B, k, n);
     
     freeMatrix(B, k);
@@ -199,4 +245,3 @@ int main() {
     printf("Tempo de execucao: %f segundos\n", cpu_time_used);
     return 0;
 }
-
