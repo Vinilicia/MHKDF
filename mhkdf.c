@@ -188,9 +188,7 @@ void updateState(unsigned long** B, int k, int n){
     int gap = n/4;
     int d1, d2;
     unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
-    for(int i = 0; i < k*n/16; i++){
-        l2 = B[l1][c1] % k;
-        c2 = (c1 < n/2) ? c1 + gap + B[l1][c1] % gap : c1 - gap - B[l1][c1] % gap;
+    for(int i = 0; i < k; i++){
         switch(B[l1][c1]%4){
             case 0:
                 d1 = -1; d2 = -1;
@@ -205,19 +203,20 @@ void updateState(unsigned long** B, int k, int n){
                 d1 = 1; d2 = -1;
                 break;
         }
+        l2 = B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % k;
+        c2 = (c1 < n/2) ? c1 + gap + B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % gap : c1 - gap - B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % gap;
         for(int h = 0; h < 16; h++){
 	    	v[h] = B[mod(l1+h*d1,k)][mod(c1+h*d2,n)];
-            //printf("B[%d][%d],", mod(l1+h*d1,k), mod(c1+h*d2,n));
 	    }
-        //printf(" -->\n");
+        //printf("B[%d][%d] --> ", l1, c1);
         blake2bPermutation(v);
 	    for(int h = 0; h < 16; h++){
 	    	B[mod(l2+h*d1,k)][mod(c2+h*d2,n)] = v[h];
-            //printf("B[%d][%d],", mod(l2+h*d1,k), mod(c2+h*d2,n));
 	    }
-        //printf("\n\n");
+        //printf("B[%d][%d]\n", l2, c2);
+        B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] ^= B[mod(l2+15*d1,k)][mod(c2+15*d2,n)];
         l1 = B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % k;
-	    c1 = B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % n;
+	c1 = B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % n;
     }
     free(v);
 }
@@ -227,8 +226,8 @@ int main() {
     double cpu_time_used;
 
     start = clock();
-    int k = 160, n = 160;
-    // 11584
+    int k = 11584, n = 11584;
+    // 11584      16384       20064
 
     unsigned long** B = allocateMatrix(k, n);
 
