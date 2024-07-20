@@ -174,10 +174,10 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_si
 	c1 = B[k-1][n-1] % n;
     int gap = n/4;
     int d1, d2;
-    int m = k*n/16/key_size/key_size;
+    int m = k*n/16/key_size;
     unsigned long key_part = 0;
     unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
-    for(int i = 0; i < k*n/16/key_size; i++){
+    for(int i = 0; i < k*n/16; i++){
         switch(B[l1][c1]%4){
             case 0:
                 d1 = -1; d2 = -1;
@@ -204,8 +204,7 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_si
 	    }
         //printf("B[%d][%d]\n", l2, c2);
         B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] ^= B[mod(l2+15*d1,k)][mod(c2+15*d2,n)];
-        key_part ^= B[l1][c1];
-        key_part ^= B[l2][c2];
+        key_part ^= (B[l1][c1] ^ B[l2][c2]);
         if(i%m == 0 && i != 0){
             key[i/m - 1] = key_part;
             key_part = 0;
@@ -222,7 +221,7 @@ int main() {
     double cpu_time_used;
 
     start = clock();
-    int k = 11584, n = 11584;
+    int k = 160, n = 160;
     // 11584      16384       20064
     int key_size = 32;
 
