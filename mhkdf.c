@@ -170,9 +170,8 @@ void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
 
 void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_size){
     int l1, l2, c1, c2;
-    l1 = B[k-1][n-1] % k;
-	c1 = B[k-1][n-1] % n;
-    int gap = n/4;
+    l1 = (B[k-1][n-1] % 0x7ab931c7) % k;
+	c1 = (B[k-1][n-1] % 0xf107d359) % n;
     int d1, d2;
     int m = k*n/16/key_size;
     unsigned long key_part = 0;
@@ -192,8 +191,8 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_si
                 d1 = 1; d2 = -1;
                 break;
         }
-        l2 = B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % k;
-        c2 = (c1 < n/2) ? c1 + gap + B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % gap : c1 - gap - B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % gap;
+        l2 = (B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % 0x3e459107)  % k;
+        c2 = (B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % 0xf146295e) % n;
         for(int h = 0; h < 16; h++){
 	    	v[h] = B[mod(l1+h*d1,k)][mod(c1+h*d2,n)];
 	    }
@@ -209,8 +208,8 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_si
             key[i/m - 1] = key_part;
             key_part = 0;
         }
-        l1 = B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % k;
-	    c1 = B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % n; 
+        l1 = (B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % 0x7ab931c7) % k;
+	    c1 = (B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % 0xf107d359) % n; 
     }
     key[key_size-1] = key_part;
     free(v);
