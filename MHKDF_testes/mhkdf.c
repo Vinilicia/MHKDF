@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <time.h>
 #include <openssl/evp.h>
 
 int mod(int a, int b) {
@@ -168,6 +169,10 @@ void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
 }
 
 void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_size){
+    FILE *file = fopen("acessados.txt", "w");
+    FILE *file2 = fopen("modificados.txt", "w");
+    fprintf(file, "%d %d\n", k, n);
+    fprintf(file2, "%d %d\n", k, n);
     int l1, l2, c1, c2;
     l1 = (B[k-1][n-1] % 0x7ab931c7) % k;
 	c1 = (B[k-1][n-1] % 0xf107d359) % n;
@@ -190,15 +195,19 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_si
                 d1 = 1; d2 = -1;
                 break;
         }
-        l2 = (B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % 0x3e459107)  % k;
+        l2 = (B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % 0x3e459107) % k;
         c2 = (B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % 0xf146295e) % n;
         for(int h = 0; h < 16; h++){
 	    	v[h] = B[mod(l1+h*d1,k)][mod(c1+h*d2,n)];
+            fprintf(file, "%d %d %d ", mod(l1+h*d1,k), mod(c1+h*d2,n), i);
 	    }
+        fprintf(file, "\n");
         blake2bPermutation(v);
 	    for(int h = 0; h < 16; h++){
 	    	B[mod(l2+h*d1,k)][mod(c2+h*d2,n)] = v[h];
+            fprintf(file2, "%d %d %d ", mod(l2+h*d1,k), mod(c2+h*d2,n), i);
 	    }
+        fprintf(file2, "\n");
         B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] ^= B[mod(l2+15*d1,k)][mod(c2+15*d2,n)];
         key_part ^= (B[l1][c1] ^ B[l2][c2]);
         if(i%m == 0 && i != 0){
@@ -210,10 +219,19 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int key_si
     }
     key[key_size-1] = key_part;
     free(v);
+    fclose(file);
+    fclose(file2);
 }
 
 int main() {
-    int k = 160, n = 160;
+
+    /*///////////////////////////TEMPORIZADOR////////////////////////////////////
+    clock_t start, end;
+    double cpu_time_used;
+    start = clock();
+    /////////////////////////////TEMPORIZADOR//////////////////////////////////*/
+
+    int k = 3200, n = 3200;
     // 11584      16384       20064
     int key_size = 32;
 
@@ -227,5 +245,13 @@ int main() {
     
     freeMatrix(B, k);
     free(key);
+
+    /*/////////////////////////////TEMPORIZADOR///////////////////////////////////
+    end = clock();
+    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Tempo de execucao: %f segundos\n", cpu_time_used);
+    //////////////////////////////TEMPORIZADOR//////////////////////////////////*/
+
     return 0;
 }
