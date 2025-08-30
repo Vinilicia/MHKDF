@@ -99,7 +99,7 @@ unsigned long** allocateMatrix(int k, int n) {
 }
 
 unsigned long* allocateKey(int key_size){
-    if(key_size % 8 != 0){
+    if(key_size % 16 != 0){
         exit(1);
     }
     int n = key_size / 8;
@@ -221,7 +221,8 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int vec_si
     int d1, d2;
     int m = k*n/16/key_size;
     unsigned long key_part = 0;
-    unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
+    unsigned long *v = (unsigned long*) malloc(vec_size*sizeof(unsigned long));
+    vec_size--;
     for(int i = 0; i < k*n/16; i++){
         switch(B[l1][c1]%4){
             case 0:
@@ -237,23 +238,36 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int vec_si
                 d1 = 1; d2 = -1;
                 break;
         }
-        l2 = (B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % 0x3e459107)  % k;
-        c2 = (B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] % 0xf146295e) % n;
-        for(int h = 0; h < 16; h++){
+        l2 = (B[mod(l1+vec_size*d1,k)][mod(c1+vec_size*d2,n)] % 0x3e459107) % k;
+        c2 = (B[mod(l1+vec_size*d1,k)][mod(c1+vec_size*d2,n)] % 0xf146295e) % n;
+        for(int h = 0; h <= vec_size; h++){
 	    	v[h] = B[mod(l1+h*d1,k)][mod(c1+h*d2,n)];
 	    }
-        blake2bPermutation(v);
-	    for(int h = 0; h < 16; h++){
+        switch (vec_size) {
+            case 15:
+                blake2bPermutation(v);
+                break;
+            case 31:
+                permutation32(v);
+                break;
+            case 47:
+                permutation48(v);
+                break;
+            case 63:
+                permutation64(v);
+                break;
+        }
+	    for(int h = 0; h <= vec_size; h++){
 	    	B[mod(l2+h*d1,k)][mod(c2+h*d2,n)] = v[h];
 	    }
-        B[mod(l1+15*d1,k)][mod(c1+15*d2,n)] ^= B[mod(l2+15*d1,k)][mod(c2+15*d2,n)];
+        B[mod(l1+vec_size*d1,k)][mod(c1+vec_size*d2,n)] ^= B[mod(l2+vec_size*d1,k)][mod(c2+vec_size*d2,n)];
         key_part ^= (B[l1][c1] ^ B[l2][c2]);
         if(i%m == 0 && i != 0){
             key[i/m - 1] = key_part;
             key_part = 0;
         }
-        l1 = (B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % 0x7ab931c7) % k;
-	    c1 = (B[mod(l2+15*d1,k)][mod(c2+15*d2,n)] % 0xf107d359) % n;
+        l1 = (B[mod(l2+vec_size*d1,k)][mod(c2+vec_size*d2,n)] % 0x7ab931c7) % k;
+	    c1 = (B[mod(l2+vec_size*d1,k)][mod(c2+vec_size*d2,n)] % 0xf107d359) % n;
     }
     key[key_size-1] = key_part;
     free(v);
