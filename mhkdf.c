@@ -2,21 +2,130 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <openssl/evp.h>
+
+int lfsr8_state = 0b10011110;
+int SBOX[16] = { 0xE,0xD,0xB,0x0,0x2,0x1,0x4,0xF,
+                 0x7,0xA,0x8,0x5,0x9,0xC,0x3,0x6};
 
 int mod(int a, int b) {
     int result = a % b;
     return (result < 0) ? result + b : result;
 }
 
-void hashFunction(unsigned char *input, size_t input_len, unsigned char *hash) {
-    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-    const EVP_MD *md = EVP_sha256();
+unsigned char* padding(unsigned char* password, int r) {
+    int size = strlen(password);
+    int rest = size % r;
+    unsigned char* message = (unsigned char*) malloc((size+rest)*sizeof(unsigned char));
+    memcpy(message, password, size);
+    if(rest) {
+        message[size] = 0x80;
+    }
+    return message;
+}
 
-    EVP_DigestInit_ex(mdctx, md, NULL);
-    EVP_DigestUpdate(mdctx, input, input_len);
-    EVP_DigestFinal_ex(mdctx, hash, NULL);
-    EVP_MD_CTX_free(mdctx);
+int lfsr8_step() {
+    int bit7 = (lfsr8_state >> 7) & 1;
+    int bit3 = (lfsr8_state >> 3) & 1;
+    int bit2 = (lfsr8_state >> 2) & 1;
+    int bit1 = (lfsr8_state >> 1) & 1;
+    int feedback = bit7 ^ bit3 ^ bit2 ^ bit1;
+    lfsr8_state = ((lfsr8_state << 1) | feedback) & 0xFF;
+    return lfsr8_state;
+}
+
+void lCounter_b(unsigned char *state, int b_size, int r) {
+    int counter = lfsr8_step();
+    for (int i = 0; i < r; i++) {
+        int bit = (counter >> i) & 1;
+        state[i/8] ^= (bit << (i % 8));
+    }
+    for (int i = 0; i < r; i++) {
+        int bit = (counter >> (r - 1 - i)) & 1;
+        int pos = b_size - r + i;
+        state[pos/8] ^= (bit << (pos % 8));
+    }
+}
+
+static void sBoxLayer(unsigned char *state, int b_size) {
+    int nibbles = b_size / 4;
+    for (int i = 0; i < nibbles; i++) {
+        int pos = i * 4;
+        int nib = 0;
+        for (int j = 0; j < 4; j++) {
+            int bit = (state[(pos+j)/8] >> ((pos+j) % 8)) & 1;
+            nib |= (bit << j);
+        }
+        int out = SBOX[nib];
+        for (int j = 0; j < 4; j++) {
+            int bit = (out >> j) & 1;
+            int posj = pos + j;
+            state[posj/8] = (state[posj/8] & ~(1 << (posj%8))) | (bit << (posj%8));
+        }
+    }
+}
+
+void pLayer(unsigned char *state, int b_size) {
+    int last = b_size - 1;
+    int mul = b_size / 4;
+    unsigned char out[40] = {0};
+    for (int j = 0; j < b_size; j++) {
+        int dst = (j == last) ? last : (j * mul) % (b_size - 1);
+        int bit = (state[j/8] >> (j%8)) & 1;
+        out[dst/8] |= (bit << (dst%8));
+    }
+    memcpy(state, out, (b_size+7)/8);
+}
+
+void PRESENT_TYPE_permutation(unsigned char *b, int b_size, int r, int R) {
+    for(int i = 0; i < R; i++) {
+        lCounter_b(b, b_size, r);
+        sBoxLayer(b, b_size);
+        pLayer(b, b_size);
+    }
+}
+
+void absorbing(unsigned char *b, int b_size, unsigned char* message, int r, int R) {
+    for(int i = 0; i < strlen(message); i+=r){
+        for(int j = 0; j < r; j++){
+            b[j] ^= message[i+j];
+        }
+        PRESENT_TYPE_permutation(b, b_size, r, R);
+    }
+}
+
+void squeezing(unsigned long** B, unsigned char* b, int b_size, int r, int R) {
+    int p1 = 0, p2 = 0;
+    unsigned long packed;
+    while(true) {
+        for(int i = 0; i < r; i++) {
+            packed <<= 8;
+            packed |= b[i];
+            p2++;
+            if(p2 % 8 == 0) {
+                B[0][p1] = packed;
+                p1++;
+                p2 = 0;
+                packed = 0;
+            }
+        }
+        if(p1 == 16) {
+            break;
+        }
+        PRESENT_TYPE_permutation(b, b_size, r, R);
+    }
+}
+
+void spongent256(unsigned long** B, unsigned char* password) {
+    #define B_BYTES 34
+    unsigned char b[B_BYTES] = {0};
+    int r = 2;
+    int b_size = 272;
+    int R = 140;
+    // int n = 32;
+    unsigned char *message = padding(password, r);
+    absorbing(b, b_size, message, r, R);
+    squeezing(B, b, b_size, r, R);
+    free(message);
 }
 
 void G(unsigned long *a, unsigned long *b, unsigned long *c, unsigned long *d) {
@@ -57,31 +166,31 @@ void permutation32(unsigned long *v) {
 }
 
 void permutation48(unsigned long *v) {
-    G(&v[0],  &v[12], &v[24], &v[36]);
-    G(&v[1],  &v[13], &v[25], &v[37]);
-    G(&v[2],  &v[14], &v[26], &v[38]);
-    G(&v[3],  &v[15], &v[27], &v[39]);
-    G(&v[4],  &v[16], &v[28], &v[40]);
-    G(&v[5],  &v[17], &v[29], &v[41]);
-    G(&v[6],  &v[18], &v[30], &v[42]);
-    G(&v[7],  &v[19], &v[31], &v[43]);
-    G(&v[8],  &v[20], &v[32], &v[44]);
-    G(&v[9],  &v[21], &v[33], &v[45]);
+    G(&v[0], &v[12], &v[24], &v[36]);
+    G(&v[1], &v[13], &v[25], &v[37]);
+    G(&v[2], &v[14], &v[26], &v[38]);
+    G(&v[3], &v[15], &v[27], &v[39]);
+    G(&v[4], &v[16], &v[28], &v[40]);
+    G(&v[5], &v[17], &v[29], &v[41]);
+    G(&v[6], &v[18], &v[30], &v[42]);
+    G(&v[7], &v[19], &v[31], &v[43]);
+    G(&v[8], &v[20], &v[32], &v[44]);
+    G(&v[9], &v[21], &v[33], &v[45]);
     G(&v[10], &v[22], &v[34], &v[46]);
     G(&v[11], &v[23], &v[35], &v[47]);
 }
 
 void permutation64(unsigned long *v) {
-    G(&v[0],  &v[16], &v[32], &v[48]);
-    G(&v[1],  &v[17], &v[33], &v[49]);
-    G(&v[2],  &v[18], &v[34], &v[50]);
-    G(&v[3],  &v[19], &v[35], &v[51]);
-    G(&v[4],  &v[20], &v[36], &v[52]);
-    G(&v[5],  &v[21], &v[37], &v[53]);
-    G(&v[6],  &v[22], &v[38], &v[54]);
-    G(&v[7],  &v[23], &v[39], &v[55]);
-    G(&v[8],  &v[24], &v[40], &v[56]);
-    G(&v[9],  &v[25], &v[41], &v[57]);
+    G(&v[0], &v[16], &v[32], &v[48]);
+    G(&v[1], &v[17], &v[33], &v[49]);
+    G(&v[2], &v[18], &v[34], &v[50]);
+    G(&v[3], &v[19], &v[35], &v[51]);
+    G(&v[4], &v[20], &v[36], &v[52]);
+    G(&v[5], &v[21], &v[37], &v[53]);
+    G(&v[6], &v[22], &v[38], &v[54]);
+    G(&v[7], &v[23], &v[39], &v[55]);
+    G(&v[8], &v[24], &v[40], &v[56]);
+    G(&v[9], &v[25], &v[41], &v[57]);
     G(&v[10], &v[26], &v[42], &v[58]);
     G(&v[11], &v[27], &v[43], &v[59]);
     G(&v[12], &v[28], &v[44], &v[60]);
@@ -134,34 +243,12 @@ void printKey(unsigned long* key, int key_size){
 }
 
 void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
-    unsigned char hash[32];
-    unsigned char aux_hash[32];
-	int c, l;
     //  B[0][0] ... B[0][15] ←  H(P || S)
-    hashFunction(password, strlen(password), hash);
-    B[0][0] = ((hash[0] << 8 | hash[1]) << 8 | hash[2]) << 8 | hash[3]; B[0][0] = (((B[0][0] << 8 | hash[4]) << 8 | hash[5]) << 8 | hash[6]) << 8 | hash[7];
-    B[0][1] = ((hash[8] << 8 | hash[9]) << 8 | hash[10]) << 8 | hash[11]; B[0][1] = (((B[0][1] << 8 | hash[12]) << 8 | hash[13]) << 8 | hash[14]) << 8 | hash[15];
-    B[0][2] = ((hash[16] << 8 | hash[17]) << 8 | hash[18]) << 8 | hash[19]; B[0][2] = (((B[0][2] << 8 | hash[20]) << 8 | hash[21]) << 8 | hash[22]) << 8 | hash[23];
-    B[0][3] = ((hash[24] << 8 | hash[25]) << 8 | hash[26]) << 8 | hash[27]; B[0][3] = (((B[0][3] << 8 | hash[28]) << 8 | hash[29]) << 8 | hash[30]) << 8 | hash[31];
-    hashFunction(hash, 32, aux_hash);
-    B[0][4] = ((aux_hash[0] << 8 | aux_hash[1]) << 8 | aux_hash[2]) << 8 | aux_hash[3]; B[0][4] = (((B[0][4] << 8 | aux_hash[4]) << 8 | aux_hash[5]) << 8 | aux_hash[6]) << 8 | aux_hash[7];
-    B[0][5] = ((aux_hash[8] << 8 | aux_hash[9]) << 8 | aux_hash[10]) << 8 | aux_hash[11]; B[0][5] = (((B[0][5] << 8 | aux_hash[12]) << 8 | aux_hash[13]) << 8 | aux_hash[14]) << 8 | aux_hash[15];
-    B[0][6] = ((aux_hash[16] << 8 | aux_hash[17]) << 8 | aux_hash[18]) << 8 | aux_hash[19]; B[0][6] = (((B[0][6] << 8 | aux_hash[20]) << 8 | aux_hash[21]) << 8 | aux_hash[22]) << 8 | aux_hash[23];
-    B[0][7] = ((aux_hash[24] << 8 | aux_hash[25]) << 8 | aux_hash[26]) << 8 | aux_hash[27]; B[0][7] = (((B[0][7] << 8 | aux_hash[28]) << 8 | aux_hash[29]) << 8 | aux_hash[30]) << 8 | aux_hash[31];
-    hashFunction(aux_hash, 32, hash);
-    B[0][8] = ((hash[0] << 8 | hash[1]) << 8 | hash[2]) << 8 | hash[3]; B[0][8] = (((B[0][8] << 8 | hash[4]) << 8 | hash[5]) << 8 | hash[6]) << 8 | hash[7];
-    B[0][9] = ((hash[8] << 8 | hash[9]) << 8 | hash[10]) << 8 | hash[11]; B[0][9] = (((B[0][9] << 8 | hash[12]) << 8 | hash[13]) << 8 | hash[14]) << 8 | hash[15];
-    B[0][10] = ((hash[16] << 8 | hash[17]) << 8 | hash[18]) << 8 | hash[19]; B[0][10] = (((B[0][10] << 8 | hash[20]) << 8 | hash[21]) << 8 | hash[22]) << 8 | hash[23];
-    B[0][11] = ((hash[24] << 8 | hash[25]) << 8 | hash[26]) << 8 | hash[27]; B[0][11] = (((B[0][11] << 8 | hash[28]) << 8 | hash[29]) << 8 | hash[30]) << 8 | hash[31];
-    hashFunction(hash, 32, aux_hash);
-    B[0][12] = ((aux_hash[0] << 8 | aux_hash[1]) << 8 | aux_hash[2]) << 8 | aux_hash[3]; B[0][12] = (((B[0][12] << 8 | aux_hash[4]) << 8 | aux_hash[5]) << 8 | aux_hash[6]) << 8 | aux_hash[7];
-    B[0][13] = ((aux_hash[8] << 8 | aux_hash[9]) << 8 | aux_hash[10]) << 8 | aux_hash[11]; B[0][13] = (((B[0][13] << 8 | aux_hash[12]) << 8 | aux_hash[13]) << 8 | aux_hash[14]) << 8 | aux_hash[15];
-    B[0][14] = ((aux_hash[16] << 8 | aux_hash[17]) << 8 | aux_hash[18]) << 8 | aux_hash[19]; B[0][14] = (((B[0][14] << 8 | aux_hash[20]) << 8 | aux_hash[21]) << 8 | aux_hash[22]) << 8 | aux_hash[23];
-    B[0][15] = ((aux_hash[24] << 8 | aux_hash[25]) << 8 | aux_hash[26]) << 8 | aux_hash[27]; B[0][15] = (((B[0][15] << 8 | aux_hash[28]) << 8 | aux_hash[29]) << 8 | aux_hash[30]) << 8 | aux_hash[31];
-	unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
+    spongent256(B, password);
 
     // Preencher restante da matriz
-
+	int c, l;
+	unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
 
     // Primeira linha
     int cont;
@@ -274,7 +361,7 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int vec_si
 }
 
 int main() {
-    int k = 160, n = 160;
+    int k = 16, n = 16;
     // 11584      16384       20064
     int key_size = 32;
     int v = 16;
