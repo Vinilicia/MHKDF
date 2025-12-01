@@ -1,3 +1,0 @@
-1 Giga, 32 bytes de chave -> 10 segundos
-2 Gigas, 32 bytes de chave -> 24 segundos
-3 Gigas, 32 bytes de chave -> 32 segundos
