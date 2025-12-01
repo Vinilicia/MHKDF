@@ -1,3 +1,4 @@
 all:
-	gcc -o prog mhkdf.c -lssl -lcrypto
+	gcc -o prog mhkdfSpongent.c -lssl -lcrypto
 	./prog
+
