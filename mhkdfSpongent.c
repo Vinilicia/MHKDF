@@ -246,11 +246,11 @@ void fillBuffer(unsigned long** B, int k, int n, unsigned char *password) {
     //  B[0][0] ... B[0][15] ←  H(P || S)
     spongent256(B, password);
 
-    // Preencher restante da matriz
+    // Fill the rest of the matrix
 	int c, l;
 	unsigned long *v = (unsigned long*) malloc(16*sizeof(unsigned long));
 
-    // Primeira linha
+    // First line
     int cont;
     for(int j = 0; j < n/16 - 1; j++){
     	cont = 0;
@@ -360,21 +360,28 @@ void updateState(unsigned long** B, unsigned long* key, int k, int n, int vec_si
     free(v);
 }
 
-int main() {
-    int k = 16, n = 16;
-    // 11584      16384       20064
-    int key_size = 32;
-    int v = 16;
-
+unsigned long* mhkdf(int k, int n, int key_size, int v, unsigned char *password) {
     unsigned long** B = allocateMatrix(k, n);
     unsigned long* key = allocateKey(key_size);
-    unsigned char *password = "senha_muito_forte";
+    
     fillBuffer(B, k, n, password);
     updateState(B, key, k, n, v, key_size);
-    //printMatrix(B, k, n);
+
+    freeMatrix(B, k); 
+
+    return key; 
+}
+
+int main() {
+    int k = 160, n = 160;
+    int key_size = 32;
+    int v = 16;
+	
+    unsigned char *password = "senha_muito_forte";
+    unsigned long* key = mhkdf(k, n, key_size, v, password);
     printKey(key, key_size);
 
-    freeMatrix(B, k);
     free(key);
+
     return 0;
 }
